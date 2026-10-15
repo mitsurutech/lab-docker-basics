@@ -1,0 +1,136 @@
+# Docker basics: containers, logs and restarts. A small stack with one service that is broken
+# on purpose, for you to find, fix and restart using only what a lab's terminal allows.
+#
+# Your copy has three services, a web page (web), a queue (cache) and a worker that takes
+# jobs from the queue (worker), and it has no way out to the internet. The worker will not
+# start: its log says why. In the lab's terminal:
+#
+#   docker ps -a             what is running, and what has stopped
+#   docker logs worker       what the worker said before it stopped
+#   docker exec -it web sh   a shell inside a service that is running
+#   docker restart worker    start it again once you have fixed what it complained about
+#
+# Fix the worker's setting in /settings/worker.conf, which lives in a named volume that web
+# and worker share, restart the worker and watch docker ps show it healthy. Files you write
+# anywhere else inside a container are gone when the lab stops; the named volume is saved.
+#
+# Hand in the output of docker ps -a before and after the fix, the line of the log that told
+# you what was wrong, and a sentence on which of your files would survive the lab stopping.
+
+services:
+  web:
+    image: nginx:1.27-alpine
+    # The page and the server's settings are written when the container first starts, into
+    # the container's own filesystem, and worker.conf into the volume. A restart keeps them
+    # (it is the same container); stopping the lab does not keep the page, only the volume.
+    entrypoint:
+      - sh
+      - -c
+      - |
+        grep -q 'Docker basics' /usr/share/nginx/html/index.html || printf '%s\n' \
+          '<!doctype html><title>Docker basics</title>' \
+          '<h1>Docker basics</h1>' \
+          '<p>This page is served by the <b>web</b> container. It was written into the' \
+          ' filesystem of the container itself when it started, so it is gone when the lab stops.</p>' \
+          '<p><a href="/settings/">The shared settings volume</a> is kept.</p>' \
+          > /usr/share/nginx/html/index.html
+        [ -f /settings/worker.conf ] || printf '%s\n' \
+          '# Settings for the worker, one NAME=value per line.' \
+          '# QUEUE_HOST is the name of the service that keeps the queue of jobs.' \
+          '# It has not been set, so the worker cannot start.' \
+          'POLL_SECONDS=5' \
+          > /settings/worker.conf
+        printf '%s\n' \
+          'server {' \
+          '  listen 80;' \
+          '  root /usr/share/nginx/html;' \
+          '  location /settings/ { alias /settings/; autoindex on; default_type text/plain; }' \
+          '}' \
+          > /etc/nginx/conf.d/default.conf
+        exec nginx -g "daemon off;"
+    volumes:
+      - settings:/settings
+    expose: ["80"]
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /settings/worker.conf && wget -q -O /dev/null http://127.0.0.1/"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+    labels:
+      lab.title: Docker basics page
+      lab.open: "80"
+
+  cache:
+    image: valkey/valkey:8.1-alpine
+    user: "999"
+    # Nothing outside this copy can reach it, so there is no password and nothing is saved.
+    command: ["valkey-server", "--save", "", "--appendonly", "no", "--protected-mode", "no"]
+    expose: ["6379"]
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+
+  worker:
+    image: valkey/valkey:8.1-alpine
+    user: "999"
+    # **Broken on purpose**: it reads QUEUE_HOST from the shared settings, finds none and
+    # stops, saying exactly that. Once the line is there it counts one finished job in the
+    # queue every few seconds. Only the log and the settings tell you what is wrong.
+    entrypoint:
+      - sh
+      - -c
+      - |
+        conf=/settings/worker.conf
+        rm -f /tmp/alive
+        host=$$(sed -n 's/^QUEUE_HOST=//p' $$conf | tail -n 1)
+        pause=$$(sed -n 's/^POLL_SECONDS=//p' $$conf | tail -n 1)
+        [ -n "$$pause" ] || pause=5
+        if [ -z "$$host" ]; then
+          echo "worker: cannot start, $$conf has no QUEUE_HOST line."
+          echo "worker: QUEUE_HOST is the name of the service that keeps the queue."
+          echo "worker: add a line like QUEUE_HOST=name to $$conf, then restart me."
+          exit 1
+        fi
+        # Stop at once when told to: docker restart waits ten seconds for a process that
+        # ignores it, and a shell that is PID 1 ignores it while it is busy in sleep.
+        trap 'exit 0' TERM
+        echo "worker: started, taking jobs from the queue on $$host"
+        while :; do
+          if ! n=$$(valkey-cli -h "$$host" incr jobs_done 2>/dev/null); then
+            echo "worker: cannot reach a queue called $$host, check QUEUE_HOST in $$conf."
+            exit 1
+          fi
+          touch /tmp/alive
+          echo "worker: finished job $$n"
+          sleep "$$pause" &
+          wait $$!
+        done
+    volumes:
+      - settings:/settings:ro
+    depends_on:
+      web:
+        condition: service_healthy
+      cache:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/alive"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    deploy:
+      resources:
+        limits:
+          memory: 32M
+
+volumes:
+  settings:
