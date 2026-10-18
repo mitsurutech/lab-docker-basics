@@ -1,5 +1,7 @@
 # Docker basics lab with Docker Compose: learn containers, logs and restarts by fixing a broken service
 
+[English](README.md) | [Français](README.fr.md) | [日本語](README.ja.md) | [Español](README.es.md)
+
 [![check](https://github.com/mitsurutech/lab-docker-basics/actions/workflows/check.yml/badge.svg)](https://github.com/mitsurutech/lab-docker-basics/actions/workflows/check.yml)
 
 A ready-made **Docker lab for beginners** for classrooms, from the [MitsuruTech Learning Platform](https://mitsurutech.co.uk/learning), where schools and colleges give every student their own databases, containers and terminal in the browser. Each student gets a small stack of three containers with one of them **broken on purpose**. They read its logs to find out why it stopped, look around inside a healthy container, fix the setting that was missing, restart the service and watch it come up healthy: `docker ps`, `docker logs`, `docker exec` and `docker restart`, on a real Docker, with nothing installed and nothing that can harm anybody else's machine.
@@ -86,7 +88,9 @@ test/check.sh
 
 [nginx](https://nginx.org) is under a BSD-2-Clause licence and [Valkey](https://valkey.io), the open source fork of Redis, is under the BSD-3-Clause licence. The images are `nginx:1.27-alpine` and `valkey/valkey:8.1-alpine`, run unmodified from their public registries, and neither is distributed in this repository.
 
-The compose file, the tests and this documentation are MIT licensed, see [LICENSE](LICENSE): copy it, change it, teach with it.
+## Licence
+
+This work is licensed under [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/). You may share it and adapt it for learning and teaching, if you credit Mitsuru Technologies Ltd, do not use it commercially, and share anything you make from it under the same licence. The full text is in the `LICENSE` file.
 
 ## About
 
